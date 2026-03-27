@@ -25,6 +25,25 @@ It compiles repo context into a stronger prompt, sends it to your chosen AI back
 - Stores sessions locally in SQLite
 - Produces PR summaries from prior sessions on the current branch
 
+Status: Experimental
+
+This project is experimental software. Use cautiously: features, command names, and behavior may change rapidly. The design is intended for exploration and to provide pragmatic automation around AI-assisted coding workflows; it's not a stable production tool yet.
+
+Why use amp?
+
+- Orchestration: turns single-shot AI suggestions into repeatable, auditable workflows (generate → run → validate → PR).
+- Session persistence: saves prompts, compiled context, and responses so work can be resumed, reviewed, or turned into a PR.
+- Validation + retry: runs typecheck, linter, and tests after AI changes and retries automatically by appending failures to the next prompt.
+- Skills & automation: supports YAML-defined skills (macros) for common workflows and installable skill sets.
+- Repository auditing & generator: creates AGENTS.md plus companion files to help AI agents understand the repo.
+- Diff intelligence: classifies risk for changes and surfaces risky files before creating a PR.
+- Multi-backend: use Copilot CLI, Codex, or future adapters—amp focuses on orchestration, not model quality.
+
+How this differs from GitHub Copilot CLI
+
+- Copilot CLI is an interactive agent with deep GitHub integration and an IDE-like experience. amp is focused on automation and reproducible repo workflows that complement—not replace—interactive tools.
+
+
 ## Install
 
 ```bash
