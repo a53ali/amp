@@ -49,4 +49,17 @@ Notes
 - Skills and audit outputs are meant as guides; review them before acting.
 - Sessions are stored at ~/.amp/sessions.db
 
+## Developer / Contributing
+
+Quick developer guide (short):
+
+- Run locally: npm install && npm run build && node ./bin/amp.js --help
+- Tests & lint: npm test (if present) and npm run lint; use tsc --noEmit for type-checking
+- Project layout: key modules live under src/ (adapters, repo, cli, session, skills, validation). AGENTS.md drives generated context.
+- Add adapters: implement the adapter interface in src/adapters and register in src/index.ts getAdapter.
+- AI audit: amp ai-audit [--modules] [--out-dir DIR] [--dry-run] — use --modules to generate per-module AGENTS.md.
+- Contributions: open issues/PRs; follow existing code style and run tests before committing.
+
+If you want a longer contributor guide (examples, local debugging tips, testing matrix), ask and it will be added.
+
 Want this README longer or to include examples for contributors? Replace with more detail or keep it short and link to AGENTS.md.
