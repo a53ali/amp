@@ -76,6 +76,14 @@ async function showCommandHelp(command?: string): Promise<void> {
       '',
       'Analyze the repository and generate AGENTS.md plus companion files.',
     ].join('\n'),
+    'ai-audit': [
+      'amp ai-audit [--modules] [--out-dir <dir>] [--dry-run]',
+      '',
+      'Analyze the repository, generate/update AGENTS.md, produce audit.json and skills.md.',
+      '--modules enables per-module AGENTS.md generation',
+      '--out-dir <dir> writes outputs to a different directory',
+      '--dry-run prints planned actions without writing files',
+    ].join('\n'),
     audit: [
       'amp audit',
       '',
@@ -298,73 +306,100 @@ async function main() {
   }
 
   if (args[0] === 'ai-audit') {
-    console.log('Running AI-aware audit and generating AGENTS.md (repo-level and per-module)...');
+    // parse flags
+    const aiArgs = args.slice(1);
+    const modulesFlag = aiArgs.includes('--modules');
+    const dryRun = aiArgs.includes('--dry-run');
+    let outDir = process.cwd();
+    const outIndex = aiArgs.indexOf('--out-dir');
+    if (outIndex >= 0 && aiArgs[outIndex + 1]) {
+      outDir = path.resolve(aiArgs[outIndex + 1]);
+    }
+
+    console.log('Running AI-aware audit...');
     const profile = await analyzeRepo();
-    await generateFromProfile(profile, { update: true });
     const audit = await auditRepo();
-    const out = { generatedAt: new Date().toISOString(), profile, audit };
-    const auditPath = path.join(process.cwd(), 'audit.json');
-    await fs.writeFile(auditPath, JSON.stringify(out, null, 2) + '\n', 'utf8');
+    const result = { generatedAt: new Date().toISOString(), profile, audit };
+
+    if (dryRun) {
+      console.log('[dry-run] Would write:');
+      console.log(`- ${path.join(outDir, 'audit.json')}`);
+      console.log(`- ${path.join(outDir, 'skills.md')}`);
+      if (modulesFlag) console.log('- per-module AGENTS.md files under src/*');
+      console.log('[dry-run] Summary:');
+      console.log(`AI audit score: ${audit.score}/100`);
+      for (const d of audit.details) console.log(`- ${d}`);
+      return;
+    }
+
+    // ensure outDir exists
+    await fs.mkdir(outDir, { recursive: true }).catch(() => {});
+
+    const auditPath = path.join(outDir, 'audit.json');
+    await fs.writeFile(auditPath, JSON.stringify(result, null, 2) + '\n', 'utf8');
     console.log('Wrote', auditPath);
-    const skills = (() => {
-      const recs: string[] = [];
-      if ((profile as any).language === 'typescript') {
-        recs.push('TypeScript basics and advanced typing');
-        recs.push('tsc and type-checking workflows');
-      } else if ((profile as any).language === 'javascript') {
-        recs.push('Modern JavaScript (ES6+)');
-      } else if ((profile as any).language === 'python') {
-        recs.push('Python testing with pytest');
-      }
-      if ((profile as any).framework) recs.push(`${(profile as any).framework} fundamentals`);
-      if ((profile as any).testRunner) recs.push(`${(profile as any).testRunner} testing`);
-      if ((profile as any).linter) recs.push(`${(profile as any).linter} linting rules`);
-      if ((profile as any).packageManager) recs.push(`Using ${(profile as any).packageManager}`);
-      if ((profile as any).typeChecker) recs.push('Static type checking and fixes');
-      return Array.from(new Set(recs));
-    })();
+
+    const recs: string[] = [];
+    if ((profile as any).language === 'typescript') {
+      recs.push('TypeScript basics and advanced typing');
+      recs.push('tsc and type-checking workflows');
+    } else if ((profile as any).language === 'javascript') {
+      recs.push('Modern JavaScript (ES6+)');
+    } else if ((profile as any).language === 'python') {
+      recs.push('Python testing with pytest');
+    }
+    if ((profile as any).framework) recs.push(`${(profile as any).framework} fundamentals`);
+    if ((profile as any).testRunner) recs.push(`${(profile as any).testRunner} testing`);
+    if ((profile as any).linter) recs.push(`${(profile as any).linter} linting rules`);
+    if ((profile as any).packageManager) recs.push(`Using ${(profile as any).packageManager}`);
+    if ((profile as any).typeChecker) recs.push('Static type checking and fixes');
+    const skills = Array.from(new Set(recs));
+
     const skillsMd = ['# Recommended Skills', '', ...skills.map(s => `- ${s}`)].join('\n') + '\n';
-    const skillsPath = path.join(process.cwd(), 'skills.md');
+    const skillsPath = path.join(outDir, 'skills.md');
     await fs.writeFile(skillsPath, skillsMd, 'utf8');
     console.log('Wrote', skillsPath);
-    // per-module AGENTS.md
-    try {
-      const srcDir = path.join(process.cwd(), 'src');
-      const entries = await fs.readdir(srcDir, { withFileTypes: true }).then(list => list.filter(e => e.isDirectory()).map(d => d.name));
-      for (const dir of entries) {
-        if (/^(repo|cli|__tests__|__mocks__)$/i.test(dir)) continue;
-        const dirPath = path.join(srcDir, dir);
-        const files = await fs.readdir(dirPath).catch(() => []);
-        if (!files.some(f => /\\.tsx?$|\\.jsx?$/.test(f))) continue;
-        const agentsPath = path.join(dirPath, 'AGENTS.md');
-        const content = [
-          `# Module: ${dir}`,
-          '',
-          '## What this is',
-          `This module contains the ${dir} implementation and related code.`,
-          '',
-          '## Recommended Skills',
-          ...skills.map(s => `- ${s}`),
-          '',
-          '## Build & Run',
-          '```',
-          (profile as any).buildCommand || '',
-          '```',
-          '',
-          '## Test',
-          '```',
-          (profile as any).testCommand || '',
-          '```',
-          '',
-          '## Notes',
-          '- This file was generated by amp ai-audit. Refine for module-specific details.'
-        ].join('\n') + '\n';
-        await fs.writeFile(agentsPath, content, 'utf8').catch(() => {});
-        console.log('Wrote', agentsPath);
+
+    if (modulesFlag) {
+      try {
+        const srcDir = path.join(process.cwd(), 'src');
+        const entries = await fs.readdir(srcDir, { withFileTypes: true }).then(list => list.filter(e => e.isDirectory()).map(d => d.name));
+        for (const dir of entries) {
+          if (/^(repo|cli|__tests__|__mocks__)$/i.test(dir)) continue;
+          const dirPath = path.join(srcDir, dir);
+          const files = await fs.readdir(dirPath).catch(() => []);
+          if (!files.some(f => /\.tsx?$|\.jsx?$/.test(f))) continue;
+          const agentsPath = path.join(dirPath, 'AGENTS.md');
+          const content = [
+            `# Module: ${dir}`,
+            '',
+            '## What this is',
+            `This module contains the ${dir} implementation and related code.`,
+            '',
+            '## Recommended Skills',
+            ...skills.map(s => `- ${s}`),
+            '',
+            '## Build & Run',
+            '```',
+            (profile as any).buildCommand || '',
+            '```',
+            '',
+            '## Test',
+            '```',
+            (profile as any).testCommand || '',
+            '```',
+            '',
+            '## Notes',
+            '- This file was generated by amp ai-audit. Refine for module-specific details.'
+          ].join('\n') + '\n';
+          await fs.writeFile(agentsPath, content, 'utf8').catch(() => {});
+          console.log('Wrote', agentsPath);
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      // ignore
     }
+
     console.log(`AI audit score: ${audit.score}/100`);
     for (const d of audit.details) console.log(`- ${d}`);
     return;
